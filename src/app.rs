@@ -8,7 +8,7 @@ use winit::{
 };
 use crate::vertex;
 
-struct State {
+struct App {
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -16,10 +16,11 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
-    num_vertices: u32,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
 }
 
-impl State {
+impl App {
     async fn new(window: &Window) -> Self {
         let size = window.inner_size();
 
@@ -72,6 +73,12 @@ impl State {
             contents: bytemuck::cast_slice(vertex::VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
+
+        let index_buffer= device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(vertex::INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -106,8 +113,8 @@ impl State {
             },
             multiview: None,
         });
-        let num_vertices = vertex::VERTICES.len() as u32;
-        State {
+        let num_indices = vertex::INDICES.len() as u32;
+        App {
             surface,
             device,
             queue,
@@ -115,7 +122,8 @@ impl State {
             size,
             render_pipeline,
             vertex_buffer,
-            num_vertices,
+            index_buffer,
+            num_indices,
         }
     }
 
@@ -128,6 +136,7 @@ impl State {
         }
     }
 
+    #[allow(unused)]
     fn input(&mut self, event: &WindowEvent) -> bool {
         return true;
     }
@@ -166,7 +175,8 @@ impl State {
             });
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0..self.num_vertices, 0..1);
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
@@ -188,7 +198,7 @@ pub fn run() {
         .build(&event_loop)
         .unwrap();
     // WGPU
-    let mut state = pollster::block_on(State::new(&window));
+    let mut state = pollster::block_on(App::new(&window));
 
     event_loop.run(move |event, _, control_flow| {
         match event {
