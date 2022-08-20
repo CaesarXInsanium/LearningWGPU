@@ -21,10 +21,14 @@ fn main() {
         })
         .build(&event_loop)
         .unwrap();
+    // Textures
+    let happy_tree_bytes = include_bytes!("happy-tree.png");
     
     // WGPU
     let mut context = pollster::block_on(Context::new(&window));
     context.add_mesh(vertex::VERTICES, vertex::INDICES);
+
+    context.add_texture(happy_tree_bytes);
 
     let mut app = AppState::new(context);
     event_loop.run(move |event, _, control_flow| {
