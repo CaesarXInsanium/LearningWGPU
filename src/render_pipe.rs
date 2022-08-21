@@ -1,22 +1,21 @@
-use crate::vertex::{Mesh, Vertex};
-use image;
-use wgpu::{self, util::DeviceExt};
+use crate::vertex::*;
+use wgpu::{self, util::DeviceExt, BindGroup, BindGroupLayout};
+use winit;
 
-#[allow(unused)]
-pub struct Context {
+pub struct RenderPipeBuilder {
     clear_color: wgpu::Color, // final
-    surface: wgpu::Surface, // final
+    surface: wgpu::Surface,   // final
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration, // final
     pub size: winit::dpi::PhysicalSize<u32>,
-    render_pipeline: wgpu::RenderPipeline, // final
-    meshes: Vec<Mesh>, // final
-    textures: Vec<wgpu::BindGroup>, //final
+    meshes: Vec<Mesh>,                 // final
+    bind_groups: Vec<BindGroup>, //final
+    bind_group_layouts: Vec<wgpu::BindGroupLayout>,
+    shader: wgpu::ShaderModule,
 }
 
-#[allow(unused)]
-impl Context {
+impl RenderPipeBuilder {
     pub async fn new(window: &winit::window::Window) -> Self {
         let clear_color = wgpu::Color {
             r: 0.1,
@@ -60,49 +59,10 @@ impl Context {
             label: Some("shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render pipeline Layout"),
-                bind_group_layouts: &[],
-                push_constant_ranges: &[],
-            });
-
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[Vertex::desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-        });
         let meshes = Vec::new();
-        let textures = Vec::new();
+        let bind_groups = Vec::new();
+        let bind_group_layouts = Vec::new();
+
         Self {
             clear_color,
             surface,
@@ -110,9 +70,72 @@ impl Context {
             queue,
             config,
             size,
-            render_pipeline,
             meshes,
-            textures,
+            bind_groups,
+            bind_group_layouts,
+            shader,
+        }
+    }
+
+    pub fn build(self) -> RenderPipe {
+        let mut refs: Vec<&BindGroupLayout> = Vec::new();
+        for bind in &self.bind_group_layouts {
+            refs.push(&bind);
+        }
+        let render_pipeline_layout =
+            self.device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Render pipeline Layout"),
+                    bind_group_layouts: refs.as_slice(),
+                    push_constant_ranges: &[],
+                });
+
+        let render_pipeline = self
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Render Pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &self.shader,
+                    entry_point: "vs_main",
+                    buffers: &[Vertex::desc()],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &self.shader,
+                    entry_point: "fs_main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: self.config.format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    unclipped_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState {
+                    count: 1,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview: None,
+            });
+        RenderPipe {
+            size: self.size,
+            clear_color: self.clear_color,
+            surface: self.surface,
+            queue: self.queue,
+            device: self.device,
+            config: self.config,
+            render_pipeline,
+            meshes: self.meshes,
+            bind_groups: self.bind_groups,
         }
     }
     pub fn add_mesh(&mut self, vertices: &[Vertex], indices: &[u16]) {
@@ -137,7 +160,7 @@ impl Context {
             count: indices.len() as u32,
         })
     }
-    pub fn add_texture(&mut self, diffuse_bytes: &[u8]) {
+    pub fn add_texture(&mut self, diffuse_bytes: &[u8], name: Option<&str>) {
         let diffuse_image = image::load_from_memory(diffuse_bytes).unwrap();
         let diffuse_rgba = diffuse_image.to_rgba8();
         use image::GenericImageView;
@@ -154,7 +177,7 @@ impl Context {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: Some("Happy Tree Diffuse Texture"),
+            label: name,
         });
         self.queue.write_texture(
             wgpu::ImageCopyTexture {
@@ -220,8 +243,24 @@ impl Context {
             ],
             label: Some("diffuse bind group"),
         });
-        self.textures.push(diffuse_bind_group);
+        self.bind_groups.push(diffuse_bind_group);
+        self.bind_group_layouts.push(texture_bind_group_layout);
     }
+}
+
+pub struct RenderPipe {
+    clear_color: wgpu::Color, // final
+    pub size: winit::dpi::PhysicalSize<u32>,
+    surface: wgpu::Surface, // final
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,    // final
+    render_pipeline: wgpu::RenderPipeline, // final
+    meshes: Vec<Mesh>,                     // final
+    bind_groups: Vec<wgpu::BindGroup>,     //final
+}
+
+impl RenderPipe {
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
@@ -263,7 +302,7 @@ impl Context {
             });
             render_pass.set_pipeline(&self.render_pipeline);
             for (i, mesh) in self.meshes.iter().enumerate() {
-                render_pass.set_bind_group(0, &self.textures[i], &[]);
+                render_pass.set_bind_group(0, &self.bind_groups[i], &[]);
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint16);

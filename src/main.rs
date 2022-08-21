@@ -1,8 +1,8 @@
+mod render_pipe;
 mod app;
-mod context;
 mod vertex;
-use context::Context;
 use app::AppState;
+use render_pipe::RenderPipeBuilder;
 use winit::{event_loop::EventLoop, window::WindowBuilder, dpi::LogicalSize};
 
 const WIDTH: u32 = 800;
@@ -25,12 +25,15 @@ fn main() {
     let happy_tree_bytes = include_bytes!("happy-tree.png");
     
     // WGPU
-    let mut context = pollster::block_on(Context::new(&window));
-    context.add_mesh(vertex::VERTICES, vertex::INDICES);
+    let mut render_pipe_builder = pollster::block_on(RenderPipeBuilder::new(&window));
 
-    context.add_texture(happy_tree_bytes);
+    render_pipe_builder.add_mesh(vertex::VERTICES, vertex::INDICES);
 
-    let mut app = AppState::new(context);
+    render_pipe_builder.add_texture(happy_tree_bytes, Some("Happy Tree"));
+
+    let render_pipe = render_pipe_builder.build();
+
+    let mut app = AppState::new(render_pipe);
     event_loop.run(move |event, _, control_flow| {
         app.handle_event_cycle(&window, event, control_flow);
     });

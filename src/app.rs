@@ -1,4 +1,4 @@
-use crate::context::Context;
+use crate::render_pipe::RenderPipe;
 use winit::{
     event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::ControlFlow,
@@ -6,11 +6,11 @@ use winit::{
 };
 
 pub struct AppState {
-    pub context: Context,
+    pub render_pipe: RenderPipe,
 }
 impl AppState {
-    pub fn new(context: Context) -> Self {
-        Self { context }
+    pub fn new(context: RenderPipe) -> Self {
+        Self { render_pipe: context }
     }
     pub fn handle_event_cycle(
         &mut self,
@@ -34,18 +34,18 @@ impl AppState {
                     ..
                 } => *control_flow = ControlFlow::Exit,
                 WindowEvent::Resized(physical_size) => {
-                    self.context.resize(*physical_size);
+                    self.render_pipe.resize(*physical_size);
                 }
                 WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                    self.context.resize(**new_inner_size);
+                    self.render_pipe.resize(**new_inner_size);
                 }
                 _ => {}
             },
             Event::RedrawRequested(window_id) if window_id == window.id() => {
-                match self.context.render() {
+                match self.render_pipe.render() {
                     Ok(_) => {}
                     // surface is lost
-                    Err(wgpu::SurfaceError::Lost) => self.context.resize(self.context.size),
+                    Err(wgpu::SurfaceError::Lost) => self.render_pipe.resize(self.render_pipe.size),
                     // No more memory
                     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
                     // unknown Error
